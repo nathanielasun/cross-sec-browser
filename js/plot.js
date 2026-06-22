@@ -152,11 +152,11 @@
     ctx.strokeRect(m.l, m.t, pw, ph);
     ctx.fillStyle = "#5a6b7b";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-    ctx.fillText("Energy  (" + (this.xunit || "eV") + ")", m.l + pw / 2, h - 4);
+    ctx.fillText(this.xLabel || ("Energy  (" + (this.xunit || "eV") + ")"), m.l + pw / 2, h - 4);
     ctx.save();
     ctx.translate(13, m.t + ph / 2); ctx.rotate(-Math.PI / 2);
     ctx.textBaseline = "top";
-    ctx.fillText("Cross section  (" + (this.yunit || "m²") + ")", 0, 0);
+    ctx.fillText(this.yLabel || ("Cross section  (" + (this.yunit || "m²") + ")"), 0, 0);
     ctx.restore();
 
     // ---- series ----
@@ -208,8 +208,9 @@
     if (this.readoutEl) {
       this.readoutEl.style.opacity = 1;
       this.readoutEl.textContent =
-        best.s.label.split(" · ").pop() + "\nE = " + best.x.toPrecision(4) + " " + (this.xunit || "eV") +
-        "\nσ = " + best.y.toExponential(3) + " " + (this.yunit || "m²");
+        best.s.label.split(" · ").pop() +
+        "\n" + (this.xsym || "E") + " = " + best.x.toPrecision(4) + " " + (this.xunit || "eV") +
+        "\n" + (this.ysym || "σ") + " = " + best.y.toExponential(3) + " " + (this.yunit || "m²");
     }
   };
 

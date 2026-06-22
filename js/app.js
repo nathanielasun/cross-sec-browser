@@ -8,6 +8,25 @@
 
   const E_FACTOR = { eV: 1, keV: 1e-3, J: 1.602176634e-19 };
   const S_FACTOR = { m2: 1, cm2: 1e4, A2: 1e20 };
+  const PRETTY_UNIT = {
+    eV: "eV", keV: "keV", J: "J", m2: "m²", cm2: "cm²", A2: "Å²",
+    "m2/eV": "m²/eV", "cm2/eV": "cm²/eV", "A2/eV": "Å²/eV",
+  };
+  const pu = (u) => PRETTY_UNIT[u] || u;
+  const isDiff = (p) => p.data_kind === "differential";
+
+  // axis/legend metadata for a process (defaults cover legacy total-only data)
+  function axisInfo(p) {
+    const xq = p.x_quantity || "Energy", xu = p.x_unit || "eV";
+    const yq = p.y_quantity || "Cross section", yu = p.y_unit || "m2";
+    return {
+      xLabel: xq + "  (" + pu(xu) + ")",
+      yLabel: yq + "  (" + pu(yu) + ")",
+      xunit: pu(xu), yunit: pu(yu),
+      xsym: isDiff(p) ? "W" : "E",
+      ysym: isDiff(p) ? "dσ/dW" : "σ",
+    };
+  }
 
   const state = {
     procs: [],            // all processes (merged across datasets)
@@ -217,25 +236,36 @@
   }
 
   function updatePlot() {
+    // axis units differ between total (σ, m²) and differential (dσ/dW, m²/eV),
+    // so only co-plot series that share the focused process's data_kind.
+    const ref = state.procs.find((x) => x.id === state.focusId)
+             || state.procs.find((x) => x.id === state.selected[0]);
+    const refKind = ref ? ref.data_kind : "total";
+    let hidden = 0;
     const series = state.selected.map((id, i) => {
       const p = state.procs.find((x) => x.id === id);
+      if (p.data_kind !== refKind) { hidden++; return null; }
       const pts = [];
       for (let j = 0; j < p.energy.length; j++) pts.push([p.energy[j], p.cross_section[j]]);
       return { id: p.id, label: p.label, color: window.CSBPlot.colorFor(i), points: pts };
-    });
-    plot.xunit = "eV"; plot.yunit = "m²";
+    }).filter(Boolean);
+
+    if (ref) Object.assign(plot, axisInfo(ref));
     plot.setData(series, el.logx.checked, el.logy.checked, state.focusId);
-    renderLegend();
+    renderLegend(hidden, refKind);
   }
 
-  function renderLegend() {
+  function renderLegend(hidden, refKind) {
     if (!state.selected.length) { el.legend.innerHTML = ""; return; }
-    el.legend.innerHTML = state.selected.map((id, i) => {
+    const items = state.selected.map((id, i) => {
       const p = state.procs.find((x) => x.id === id);
       const c = window.CSBPlot.colorFor(i);
-      return `<span class="item ${id === state.focusId ? "focused" : ""}" data-id="${id}">
-        <span class="swatch" style="background:${c}"></span>${esc(shortDb(p.database))} · ${esc(p.target)} · ${esc(p.reaction || p.type)}</span>`;
+      const other = refKind && p.data_kind !== refKind;
+      return `<span class="item ${id === state.focusId ? "focused" : ""} ${other ? "off-kind" : ""}" data-id="${id}" title="${other ? "different data kind — not plotted with the current curve" : ""}">
+        <span class="swatch" style="background:${other ? "#cfd6de" : c}"></span>${esc(shortDb(p.database))} · ${esc(p.target)} · ${esc(p.reaction || p.type)}</span>`;
     }).join("");
+    const note = hidden ? `<span class="legend-note">${hidden} ${refKind === "differential" ? "total" : "differential"} series hidden (different units) — focus one to plot it.</span>` : "";
+    el.legend.innerHTML = note + items;
   }
 
   // ------------------------------------------------------------- detail
@@ -249,11 +279,20 @@
     add("Process", p.reaction);
     add("Type", p.type + " (" + p.category + ")");
     add("Species", p.projectile + " / " + p.target);
-    if (p.threshold_eV != null) add("Threshold", p.threshold_eV + " eV");
-    if (p.mass_ratio != null) add("Mass ratio m/M", p.mass_ratio);
-    if (p.ion_mass_amu != null) add("Ion mass", p.ion_mass_amu + " amu");
-    add("Points", p.n_points + "  (" + fmtNum(p.energy_min_eV) + " – " + fmtNum(p.energy_max_eV) + " eV)");
-    add("Peak σ", p.sigma_max_m2 != null ? p.sigma_max_m2.toExponential(3) + " m²" : null);
+    if (isDiff(p)) {
+      add("Kind", "Differential — SDCS dσ/dW");
+      if (p.incident_energy_eV != null) add("Incident energy T", p.incident_energy_eV + " eV");
+      if (p.threshold_eV != null) add("Ionization potential B", p.threshold_eV + " eV");
+      if (p.wmax_eV != null) add("Max ejected energy", fmtNum(p.wmax_eV) + " eV");
+      add("Points", p.n_points + "  (W: " + fmtNum(p.energy_min_eV) + " – " + fmtNum(p.energy_max_eV) + " eV)");
+      add("Peak dσ/dW", p.sigma_max_m2 != null ? p.sigma_max_m2.toExponential(3) + " m²/eV" : null);
+    } else {
+      if (p.threshold_eV != null) add("Threshold", p.threshold_eV + " eV");
+      if (p.mass_ratio != null) add("Mass ratio m/M", p.mass_ratio);
+      if (p.ion_mass_amu != null) add("Ion mass", p.ion_mass_amu + " amu");
+      add("Points", p.n_points + "  (E: " + fmtNum(p.energy_min_eV) + " – " + fmtNum(p.energy_max_eV) + " eV)");
+      add("Peak σ", p.sigma_max_m2 != null ? p.sigma_max_m2.toExponential(3) + " m²" : null);
+    }
     add("Updated", p.updated);
     el.detail.innerHTML =
       `<h3>${esc(p.reaction || p.type)}</h3><dl>${rows.join("")}</dl>` +

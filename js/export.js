@@ -33,6 +33,7 @@
   // ------------------------------------------------------------------
   function processCsv(p, opts) {
     const eu = opts.unitE, su = opts.unitS;
+    const diff = p.data_kind === "differential";
     const L = [];
     L.push("# Cross-Section Browser export — " + opts.stampISO);
     L.push("# source: " + (opts.datasetSource || "LXCat, www.lxcat.net"));
@@ -40,21 +41,34 @@
     L.push("# process_id: " + p.id);
     L.push("# reaction: " + (p.reaction || ""));
     L.push("# type: " + p.type + "   |   category: " + p.category + "   |   family: " + p.family);
+    L.push("# data_kind: " + (p.data_kind || "total"));
     L.push("# species: " + p.projectile + " / " + p.target);
-    if (p.threshold_eV !== null && p.threshold_eV !== undefined)
-      L.push("# threshold: " + convE(p.threshold_eV, eu) + " " + E_LABEL[eu]);
-    if (p.mass_ratio !== null && p.mass_ratio !== undefined)
-      L.push("# mass_ratio_m_over_M: " + p.mass_ratio);
-    if (p.ion_mass_amu !== null && p.ion_mass_amu !== undefined)
-      L.push("# ion_mass_amu: " + p.ion_mass_amu);
+    if (diff) {
+      if (p.incident_energy_eV != null) L.push("# incident_energy_T: " + p.incident_energy_eV + " eV");
+      if (p.threshold_eV != null) L.push("# ionization_potential_B: " + p.threshold_eV + " eV");
+      if (p.wmax_eV != null) L.push("# W_max: " + p.wmax_eV + " eV");
+    } else {
+      if (p.threshold_eV != null) L.push("# threshold: " + convE(p.threshold_eV, eu) + " " + E_LABEL[eu]);
+      if (p.mass_ratio != null) L.push("# mass_ratio_m_over_M: " + p.mass_ratio);
+      if (p.ion_mass_amu != null) L.push("# ion_mass_amu: " + p.ion_mass_amu);
+    }
     if (p.param_raw) L.push("# param: " + p.param_raw);
     if (p.comment) L.push("# comment: " + p.comment);
     if (p.updated) L.push("# updated: " + p.updated);
     L.push("# n_points: " + p.n_points);
-    L.push("# columns: energy [" + E_LABEL[eu] + "], cross_section [" + S_PRETTY[su] + "]");
-    L.push("energy_" + E_LABEL[eu] + ",cross_section_" + S_LABEL[su]);
-    for (let i = 0; i < p.energy.length; i++) {
-      L.push(fmt(convE(p.energy[i], eu)) + "," + fmt(convS(p.cross_section[i], su)));
+    if (diff) {
+      // SDCS: W stays in eV; only the area part of dσ/dW is unit-converted.
+      L.push("# columns: W [eV], dsigma_dW [" + S_PRETTY[su] + "/eV]");
+      L.push("W_eV,dsigma_dW_" + S_LABEL[su] + "_per_eV");
+      for (let i = 0; i < p.energy.length; i++) {
+        L.push(fmt(p.energy[i]) + "," + fmt(convS(p.cross_section[i], su)));
+      }
+    } else {
+      L.push("# columns: energy [" + E_LABEL[eu] + "], cross_section [" + S_PRETTY[su] + "]");
+      L.push("energy_" + E_LABEL[eu] + ",cross_section_" + S_LABEL[su]);
+      for (let i = 0; i < p.energy.length; i++) {
+        L.push(fmt(convE(p.energy[i], eu)) + "," + fmt(convS(p.cross_section[i], su)));
+      }
     }
     return L.join("\n") + "\n";
   }
@@ -64,8 +78,9 @@
   // ------------------------------------------------------------------
   function processSidecar(p, opts, csvName) {
     const eu = opts.unitE, su = opts.unitS;
-    return {
-      schema: "cross-section-metadata/1.0",
+    const diff = p.data_kind === "differential";
+    const base = {
+      schema: "cross-section-metadata/1.1",
       generated_utc: opts.stampISO,
       source: opts.datasetSource || "LXCat, www.lxcat.net",
       data_file: csvName,
@@ -78,7 +93,6 @@
       family: p.family,
       projectile: p.projectile,
       target: p.target,
-      threshold: numOrNull(convE(p.threshold_eV, eu)),
       mass_ratio_m_over_M: p.mass_ratio ?? null,
       ion_mass_amu: p.ion_mass_amu ?? null,
       ion_mass_ratio: p.ion_mass_ratio ?? null,
@@ -87,14 +101,32 @@
       param_raw: p.param_raw || "",
       comment: p.comment || "",
       updated: p.updated || "",
-      units: { energy: E_LABEL[eu], cross_section: S_PRETTY[su] },
-      source_units: { energy: "eV", cross_section: "m^2" },
-      conversion_from_source: { energy: E_FACTOR[eu], cross_section: S_FACTOR[su] },
       n_points: p.n_points,
-      energy_min: numOrNull(convE(p.energy_min_eV, eu)),
-      energy_max: numOrNull(convE(p.energy_max_eV, eu)),
-      sigma_max: numOrNull(convS(p.sigma_max_m2, su)),
     };
+    if (diff) {
+      return Object.assign(base, {
+        incident_energy_eV: p.incident_energy_eV ?? null,
+        ionization_potential_B_eV: p.threshold_eV ?? null,
+        wmax_eV: p.wmax_eV ?? null,
+        axes: { x_quantity: p.x_quantity || "Ejected electron energy W", y_quantity: p.y_quantity || "dsigma/dW" },
+        units: { x: "eV", y: S_PRETTY[su] + "/eV" },
+        source_units: { x: "eV", y: "m^2/eV" },
+        conversion_from_source: { x: 1, y: S_FACTOR[su] },
+        x_min: numOrNull(p.energy_min_eV),
+        x_max: numOrNull(p.energy_max_eV),
+        y_max: numOrNull(convS(p.sigma_max_m2, su)),
+      });
+    }
+    return Object.assign(base, {
+      threshold: numOrNull(convE(p.threshold_eV, eu)),
+      axes: { x_quantity: p.x_quantity || "Energy", y_quantity: p.y_quantity || "Cross section" },
+      units: { x: E_LABEL[eu], y: S_PRETTY[su] },
+      source_units: { x: "eV", y: "m^2" },
+      conversion_from_source: { x: E_FACTOR[eu], y: S_FACTOR[su] },
+      x_min: numOrNull(convE(p.energy_min_eV, eu)),
+      x_max: numOrNull(convE(p.energy_max_eV, eu)),
+      y_max: numOrNull(convS(p.sigma_max_m2, su)),
+    });
   }
 
   function numOrNull(v) { return (v === null || v === undefined) ? null : v; }
@@ -107,20 +139,25 @@
     const L = [];
     L.push("# Cross-Section Browser — combined export — " + opts.stampISO);
     L.push("# source: " + (opts.datasetSource || "LXCat, www.lxcat.net"));
-    L.push("# units: energy [" + E_LABEL[eu] + "], cross_section [" + S_PRETTY[su] + "]");
+    L.push("# total: x=energy [" + E_LABEL[eu] + "], y=cross_section [" + S_PRETTY[su] + "]");
+    L.push("# differential (SDCS): x=W [eV], y=dsigma_dW [" + S_PRETTY[su] + "/eV], incident_energy in eV");
     L.push("# processes: " + procs.length + " (see accompanying _metadata.json)");
     L.push([
-      "process_id", "database", "target", "category", "reaction",
-      "threshold_" + E_LABEL[eu], "energy_" + E_LABEL[eu], "cross_section_" + S_LABEL[su],
+      "process_id", "database", "target", "category", "data_kind", "incident_energy_eV",
+      "x_quantity", "x_unit", "x_value", "y_quantity", "y_unit", "y_value",
     ].join(","));
     for (const p of procs) {
-      const thr = (p.threshold_eV ?? "") === "" ? "" : fmt(convE(p.threshold_eV, eu));
-      const rx = '"' + (p.reaction || "").replace(/"/g, '""') + '"';
+      const diff = p.data_kind === "differential";
+      const xq = '"' + (p.x_quantity || (diff ? "Ejected energy W" : "Energy")) + '"';
+      const yq = '"' + (p.y_quantity || (diff ? "dsigma/dW" : "Cross section")) + '"';
+      const xunit = diff ? "eV" : E_LABEL[eu];
+      const yunit = diff ? (S_LABEL[su] + "/eV") : S_LABEL[su];
+      const T = diff ? (p.incident_energy_eV ?? "") : "";
       for (let i = 0; i < p.energy.length; i++) {
-        L.push([
-          p.id, '"' + p.database + '"', p.target, '"' + p.category + '"', rx,
-          thr, fmt(convE(p.energy[i], eu)), fmt(convS(p.cross_section[i], su)),
-        ].join(","));
+        const xv = diff ? fmt(p.energy[i]) : fmt(convE(p.energy[i], eu));
+        const yv = fmt(convS(p.cross_section[i], su));
+        L.push([p.id, '"' + p.database + '"', p.target, '"' + p.category + '"',
+                p.data_kind || "total", T, xq, xunit, xv, yq, yunit, yv].join(","));
       }
     }
     return L.join("\n") + "\n";
@@ -130,13 +167,19 @@
   //  LXCat text re-export (always in canonical eV / m^2)
   // ------------------------------------------------------------------
   function lxcatText(procs, opts) {
+    const total = procs.filter((p) => p.data_kind !== "differential");
+    const skipped = procs.length - total.length;
     const L = [];
     L.push("LXCat-format export generated by Cross-Section Browser, " + opts.stampISO);
     L.push("Original source: " + (opts.datasetSource || "LXCat, www.lxcat.net"));
     L.push("Units: energy in eV, cross section in m2 (LXCat canonical).");
+    if (skipped) {
+      L.push("NOTE: " + skipped + " differential (SDCS) process(es) omitted — the LXCat block "
+           + "format represents total cross sections only; export those as CSV/JSON instead.");
+    }
     L.push("");
     const byDb = {};
-    for (const p of procs) (byDb[p.database] = byDb[p.database] || []).push(p);
+    for (const p of total) (byDb[p.database] = byDb[p.database] || []).push(p);
     for (const db of Object.keys(byDb)) {
       L.push("x".repeat(60));
       L.push("DATABASE:         " + db);

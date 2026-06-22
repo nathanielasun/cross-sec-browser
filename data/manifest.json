@@ -7,6 +7,12 @@
       "label": "LXCat (Morgan & Phelps)",
       "kind": "total",
       "homepage": "https://www.lxcat.net"
+    },
+    {
+      "file": "nist.json",
+      "label": "NIST SRD 107 (BEB)",
+      "kind": "total+differential",
+      "homepage": "https://physics.nist.gov/PhysRefData/Ionization/"
     }
   ]
 }
