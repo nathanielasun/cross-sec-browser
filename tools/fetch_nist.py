@@ -29,6 +29,7 @@ Usage
     python3 tools/fetch_nist.py data/nist.json
 """
 
+import html as htmlmod
 import json
 import re
 import sys
@@ -46,6 +47,10 @@ DELAY = 0.25               # polite pause between requests (s)
 # Incident energies (eV) at which to sample the singly differential cross section.
 SDCS_T_VALUES = [30, 50, 70, 100, 150, 200, 500, 1000]
 SDCS_SPECIES = ["H", "He", "H2"]
+
+# Atoms with electron-impact EXCITATION cross sections (BE/BEf-scaled).
+EXC_SPECIES = ["H", "He", "Li"]
+CM2_16_TO_M2 = 1.0e-20      # 1e-16 cm^2 in m^2 (NIST excitation table unit)
 
 
 # ----------------------------------------------------------------- http
@@ -188,6 +193,60 @@ def fetch_sdcs(mol, T):
     return {"mol": mol, "T": T, "B": B, "wmax": wmax, "W": W, "dsdw_m2_per_eV": dsdw_m2}
 
 
+# -------------------------------------------------- excitation parsing
+def parse_excit_ascii(text):
+    """Parse a merge.php ASCII excitation table -> [(T_eV, sigma_m2), ...].
+
+    Columns are tab-separated: 'T (eV)', then a BE/BEf-scaled column (the NIST
+    recommended model, tagged {stone02}) plus sparse comparison columns. We take
+    the scaled column; values are in 1e-16 cm^2 -> m^2.
+    """
+    lines = [l for l in text.splitlines() if l.strip()]
+    hdr = next((i for i, l in enumerate(lines) if "T (eV)" in l), None)
+    if hdr is None:
+        return []
+    headers = lines[hdr].split("\t")
+    be = next((j for j, h in enumerate(headers) if "scaled" in h.lower()), 1)
+    rows = []
+    for l in lines[hdr + 1:]:
+        cols = l.split("\t")
+        if len(cols) <= be or not cols[be].strip():
+            continue
+        T, s = fnum(cols[0]), fnum(cols[be])
+        if T is not None and s is not None:
+            rows.append((T, s * CM2_16_TO_M2))
+    return rows
+
+
+def fetch_excitation(element):
+    """Return a list of excitation items for one element (one per transition)."""
+    status, page = http_get(BASE + "atom.php?element=" + element)
+    if status != 200:
+        return []
+    hrefs = re.findall(r'href="(excit_data\.php\?[^"]+)"', page)
+    items = []
+    for href in hrefs:
+        st, tp = http_get(BASE + href)         # transition page (verbatim href ok)
+        if st != 200:
+            continue
+        m = re.search(r'href="(merge\.php\?[^"]+mode=ASCII)"', tp)
+        if not m:
+            continue
+        st2, ascii_txt = http_get(BASE + htmlmod.unescape(m.group(1)))
+        if st2 != 200:
+            continue
+        rows = parse_excit_ascii(ascii_txt)
+        if len(rows) < 3:
+            continue
+        q = dict(re.findall(r"([a-z]+)=([^&]*)", href))
+        initial = re.sub(r"<[^>]+>", "", q.get("initial", ""))
+        final = re.sub(r"<[^>]+>", "", q.get("final", ""))
+        items.append({"element": element, "id_spec": q.get("id", element),
+                      "initial": initial, "final": final, "rows": rows})
+        time.sleep(DELAY)
+    return items
+
+
 # --------------------------------------------------------- record build
 def slug(s):
     return re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_")
@@ -268,6 +327,43 @@ def sdcs_record(item, idx):
     }
 
 
+def excit_record(item, idx):
+    elem = re.sub(r"I+$", "", item["id_spec"]) or item["element"]
+    trans = f"{item['initial']}->{item['final']}"
+    E = [t for t, _ in item["rows"]]
+    s = [v for _, v in item["rows"]]
+    return {
+        "id": f"NIST__{slug(elem)}__Excitation_{slug(trans)}__{idx:03d}",
+        "label": f"NIST · {elem} · e + {elem} -> e + {elem}*({item['final']})",
+        "database": "NIST excitation BE-scaled (SRD 107)",
+        "species_banner": elem,
+        "target": elem,
+        "projectile": "e",
+        "reaction": f"E + {elem} -> E + {elem}*({item['final']})",
+        "type": "Excitation",
+        "category": "Excitation (electronic)",
+        "family": "Electron",
+        "data_kind": "total",
+        "threshold_eV": E[0],
+        "mass_ratio": None, "ion_mass_amu": None, "ion_mass_ratio": None,
+        "stat_weight_ratio": None, "complete_set": True,
+        "param_raw": f"transition {trans}; lowest tabulated energy = {E[0]} eV",
+        "comment": f"Electron-impact excitation of {elem} ({trans}). BE/BEf-scaled "
+                   f"plane-wave Born cross section (Stone, Kim & Desclaux, J. Res. NIST "
+                   f"107, 327 (2002)). Source units 1e-16 cm^2 (converted to m^2).",
+        "updated": "",
+        "columns": "Energy (eV) | Cross section (m2)",
+        "x_quantity": "Energy", "x_unit": "eV",
+        "y_quantity": "Cross section", "y_unit": "m2",
+        "energy_unit": "eV", "cross_section_unit": "m2",
+        "source_cross_section_unit": "1e-16 cm^2",
+        "n_points": len(E),
+        "energy_min_eV": min(E), "energy_max_eV": max(E),
+        "sigma_max_m2": max(s),
+        "energy": E, "cross_section": s,
+    }
+
+
 # ------------------------------------------------------------------ main
 def main():
     if len(sys.argv) != 2:
@@ -316,6 +412,18 @@ def main():
                 print(f"  --  {mol:4} T={T:<5} (no data)")
             time.sleep(DELAY)
 
+    print("\n--- EXCITATION (BE-scaled) ---")
+    for el in EXC_SPECIES:
+        items = fetch_excitation(el)
+        if not items:
+            failed.append(("excitation", el))
+            print(f"  --  {el} (no transitions)")
+            continue
+        for it in items:
+            processes.append(excit_record(it, idx)); idx += 1
+            print(f"  ok  {el} {it['initial']}->{it['final']:8} {len(it['rows']):3} pts")
+        time.sleep(DELAY)
+
     species = sorted({p["target"] for p in processes})
     categories = sorted({p["category"] for p in processes})
     databases = sorted({p["database"] for p in processes})
@@ -335,6 +443,11 @@ def main():
             {"name": "NIST BEB SDCS (SRD 107)",
              "permlink": "https://physics.nist.gov/PhysRefData/Ionization/",
              "description": "Singly differential ionization cross sections dσ/dW for H, He, H2.",
+             "contact": "NIST", "how_to_reference": "https://dx.doi.org/10.18434/T4KK5C"},
+            {"name": "NIST excitation BE-scaled (SRD 107)",
+             "permlink": "https://physics.nist.gov/PhysRefData/Ionization/",
+             "description": "Electron-impact excitation cross sections (BE/BEf-scaled plane-wave "
+                            "Born, Stone, Kim & Desclaux 2002) for H, He, Li dipole transitions.",
              "contact": "NIST", "how_to_reference": "https://dx.doi.org/10.18434/T4KK5C"},
         ],
         "facets": {"databases": databases, "species": species, "categories": categories},
