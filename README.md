@@ -4,10 +4,11 @@ A simple, dependency-free web app for browsing, plotting, and exporting
 electron- and ion-collision **cross-section data** for import into PIC-MCC and
 Boltzmann-solver codes.
 
-The data originates from [LXCat](https://www.lxcat.net) (Morgan & Phelps
-databases) and is normalized into a structured JSON catalog. The UI lets you
-filter by database / species / process type, preview curves on a log-log plot,
-and export any selection as analysis-ready files.
+It ships with a curated private catalog assembled from public sources
+(**LXCat** and **NIST SRD 107**), covering both **total** cross sections and
+**differential** (SDCS) data. The UI lets you filter by database / species /
+process type, preview curves on a log-log plot, and export any selection as
+analysis-ready files.
 
 ## Quick start
 
@@ -17,7 +18,7 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
-No build step, no internet, no dependencies — it is plain HTML/CSS/JS.
+No build step, no internet, no dependencies — plain HTML/CSS/JS.
 
 ## Using it
 
@@ -26,55 +27,93 @@ No build step, no internet, no dependencies — it is plain HTML/CSS/JS.
    their metadata shows below the plot.
 3. Pick an **export format** and **units** in the bottom bar, then **Export**.
 
+> Total cross sections (σ, m²) and differential SDCS (dσ/dW, m²/eV) have
+> different units, so the plot only co-draws curves of the same kind as the
+> focused one; it tells you how many were hidden. Both kinds can still be
+> selected and exported together.
+
+## What's in the catalog
+
+| Source | Database | Content | Count |
+|---|---|---|---|
+| LXCat | Morgan | electron–neutral (elastic/effective/excitation/ionization) | 28 |
+| LXCat | Phelps | ion–neutral momentum transfer (backscat/isotropic) | 7 |
+| NIST SRD 107 | BEB | total electron-impact ionization (93 molecules + H, He, H₂⁺) | 96 |
+| NIST SRD 107 | BEB SDCS | **differential** dσ/dW for H & He at 8 incident energies | 16 |
+
+**147 processes / ~11,650 data points.** Internal canonical units are eV and m²
+(differential: eV and m²/eV); NIST Å² values are converted on import
+(1 Å² = 1e-20 m²).
+
 ## Export formats
 
 | Format | Output | Best for |
 |---|---|---|
-| **CSV + JSON sidecar** (`.zip`) | one `<id>.csv` (2-column E, σ) + one `<id>.json` metadata per process, plus `manifest.json` & `README.txt` | the requested default; clean PIC-MCC import |
-| **Combined long CSV** (`.zip`) | one stacked `*_combined.csv` + `*_metadata.json` | loading everything as a single table |
-| **LXCat text** (`.txt`) | the selection re-emitted in canonical LXCat block format | tools that already read LXCat natively |
+| **CSV + JSON sidecar** (`.zip`) | one `<id>.csv` (2-column) + one `<id>.json` metadata per process, plus `manifest.json` & `README.txt` | the default; clean PIC-MCC import |
+| **Combined long CSV** (`.zip`) | one stacked `*_combined.csv` (generic x/y + `data_kind` columns) + `*_metadata.json` | loading everything as one table |
+| **LXCat text** (`.txt`) | the selection re-emitted in canonical LXCat block format (total only; differential is skipped with a note) | tools that read LXCat natively |
 
 CSV files use `#`-comment headers (skipped by `numpy.loadtxt` / `pandas
-read_csv(comment='#')`) so the data rows load directly. Optional unit conversion
-covers energy (eV / keV / J) and cross section (m² / cm² / Å²); the LXCat export
-stays in canonical eV / m².
+read_csv(comment='#')`). Optional unit conversion covers energy (eV / keV / J)
+and cross section (m² / cm² / Å²). For differential data the ejected-electron
+energy W stays in eV and only the area part of dσ/dW is converted (→ e.g.
+cm²/eV); the LXCat export always stays in canonical eV / m².
 
 ### Why CSV + JSON?
 
-For a PIC-MCC code the cross section itself is just a 2-column `(E, σ)` table —
-CSV is the most portable thing to import. But the *physics* that must travel
-with it (threshold energy, process type, target/projectile, mass ratio, units,
-source/reference) does not fit two columns, so it lives in a sidecar JSON. This
-keeps the numeric table trivially loadable while preserving full provenance. The
-LXCat text option is offered because several plasma codes ingest that format
-directly.
+For a PIC-MCC code the cross section itself is a 2-column `(E, σ)` table — CSV is
+the most portable thing to import. But the *physics* that must travel with it
+(threshold, process type, target/projectile, mass ratio, units, source) does not
+fit two columns, so it lives in a sidecar JSON. The LXCat text option is offered
+because several plasma codes ingest that format directly.
 
 ## Repository layout
 
 ```
-index.html              UI shell
-css/style.css           styling
-js/zip.js               minimal STORE-only ZIP writer + CRC-32 (no deps)
-js/plot.js              canvas log-log plotter
-js/export.js            CSV / JSON / LXCat / combined builders
-js/app.js               controller: load, filter, select, plot, export
-data/manifest.json      catalog of datasets to load (the extensibility seam)
-data/cross_sections.json structured dataset (generated from source)
-tools/parse_lxcat.py    LXCat .txt -> JSON parser (re-runnable, documented)
-source/Cross section.txt original LXCat download, kept for provenance
+index.html                 UI shell
+css/style.css              styling
+js/zip.js                  minimal STORE-only ZIP writer + CRC-32 (no deps)
+js/plot.js                 canvas log-log plotter (axis labels per data kind)
+js/export.js               CSV / JSON / LXCat / combined builders
+js/app.js                  controller: load, filter, select, plot, export
+data/manifest.json         catalog of datasets to load (the extensibility seam)
+data/cross_sections.json   LXCat dataset (generated from source/)
+data/nist.json             NIST SRD 107 dataset (total + differential)
+tools/parse_lxcat.py       LXCat .txt  -> JSON parser
+tools/fetch_nist.py        NIST SRD 107 live fetch -> JSON (total + SDCS)
+source/Cross section.txt   original LXCat download, kept for provenance
 ```
+
+## Data sources & provenance
+
+- **LXCat** (`www.lxcat.net`), Morgan and Phelps databases, downloaded 22 Jun
+  2026. See per-database descriptions in `data/cross_sections.json`.
+- **NIST Electron-Impact Cross Section Database, SRD 107**
+  (`physics.nist.gov/PhysRefData/Ionization/`), Binary-Encounter-Bethe (BEB /
+  BEQ) model. Fetched live by `tools/fetch_nist.py`; public domain (U.S.
+  Government work). Cite: https://dx.doi.org/10.18434/T4KK5C
+
+All NIST numbers are downloaded as **raw ASCII / SDCS tables and parsed locally**
+(no summarization), so values are exactly what NIST serves. Thresholds were
+verified against known ionization energies (e.g. CO₂ 13.77, O₂ 12.07, H₂O 12.61,
+H 13.61, He 24.59 eV). Known NIST-side gaps: 8 listed atoms return HTTP 500;
+H₂ SDCS uses a separate endpoint — both are logged in `fetch_failures` and the
+fetcher comments.
+
+Please cite the original databases per their reference requirements.
 
 ## Extending the database
 
-The browser loads every dataset listed in `data/manifest.json`. To add more
-data: produce a JSON file with the same `processes[]` schema (the simplest path
-is to drop an LXCat `.txt` into `source/` and run
-`python3 tools/parse_lxcat.py source/your.txt data/your.json`), then add an
-entry to `data/manifest.json`. The catalog also carries a `data_kind` field
-(`"total"` today) so differential cross sections can be added alongside.
+The browser loads every dataset listed in `data/manifest.json`. To add more:
 
-## Data provenance
+- **From LXCat**: drop a `.txt` into `source/` and run
+  `python3 tools/parse_lxcat.py source/your.txt data/your.json`.
+- **From NIST**: re-run `python3 tools/fetch_nist.py data/nist.json`
+  (e.g. after NIST fixes the atom endpoints, or to add more SDCS incident
+  energies — edit `SDCS_T_VALUES`).
+- Then add an entry under `sources` in `data/manifest.json`.
 
-Generated from an LXCat download (`www.lxcat.net`, 22 Jun 2026), Morgan and
-Phelps databases. Please cite the original databases per their reference
-requirements (see the per-database descriptions in `data/cross_sections.json`).
+Each process carries a `data_kind` field (`"total"` or `"differential"`) plus
+generic `x_quantity` / `x_unit` / `y_quantity` / `y_unit`, so new data shapes
+(e.g. angle-resolved differential cross sections) can be added with the same
+plumbing.
