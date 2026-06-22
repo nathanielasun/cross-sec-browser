@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cross-Section Browser</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-main">
+      <h1>Cross-Section Browser</h1>
+      <p class="tagline">
+        Browse, plot, and export electron- and ion-collision cross sections for
+        PIC-MCC&nbsp;/ Boltzmann codes.
+      </p>
+    </div>
+    <div class="header-stats" id="header-stats" aria-live="polite">
+      <!-- filled by app.js -->
+    </div>
+  </header>
+
+  <main>
+    <!-- ============================ CONTROLS ============================ -->
+    <section class="controls" aria-label="Filters">
+      <div class="control search">
+        <label for="search">Search</label>
+        <input type="search" id="search" placeholder="reaction, species, comment…"
+               autocomplete="off" />
+      </div>
+      <div class="control">
+        <label for="f-database">Database</label>
+        <select id="f-database"><option value="">All databases</option></select>
+      </div>
+      <div class="control">
+        <label for="f-species">Species (target)</label>
+        <select id="f-species"><option value="">All species</option></select>
+      </div>
+      <div class="control">
+        <label for="f-category">Process type</label>
+        <select id="f-category"><option value="">All types</option></select>
+      </div>
+      <div class="control control-actions">
+        <button id="select-filtered" type="button" class="btn">Select all shown</button>
+        <button id="clear-selection" type="button" class="btn btn-ghost">Clear</button>
+      </div>
+    </section>
+
+    <!-- ====================== TABLE + PREVIEW SPLIT ===================== -->
+    <section class="workspace">
+      <!-- ---- process table ---- -->
+      <div class="panel table-panel">
+        <div class="panel-head">
+          <h2>Processes <span id="filtered-count" class="muted"></span></h2>
+          <span class="muted hint">Click a row to select &amp; plot it</span>
+        </div>
+        <div class="table-scroll">
+          <table id="proc-table">
+            <thead>
+              <tr>
+                <th class="col-check"><input type="checkbox" id="check-all"
+                     title="Select all shown" /></th>
+                <th data-sort="database">Database</th>
+                <th data-sort="target">Target</th>
+                <th data-sort="category">Type</th>
+                <th data-sort="reaction">Reaction</th>
+                <th data-sort="threshold_eV" class="num">Threshold<br><span class="u">eV</span></th>
+                <th data-sort="n_points" class="num">Pts</th>
+                <th data-sort="energy_min_eV" class="num">E range<br><span class="u">eV</span></th>
+              </tr>
+            </thead>
+            <tbody id="proc-tbody"><!-- rows injected --></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ---- preview / plot ---- -->
+      <div class="panel preview-panel">
+        <div class="panel-head">
+          <h2>Preview</h2>
+          <div class="axis-toggles">
+            <label><input type="checkbox" id="logx" checked /> log E</label>
+            <label><input type="checkbox" id="logy" checked /> log σ</label>
+          </div>
+        </div>
+        <div class="plot-wrap">
+          <canvas id="plot" role="img" aria-label="Cross section vs energy plot"></canvas>
+          <div id="plot-readout" class="plot-readout"></div>
+        </div>
+        <div id="legend" class="legend"></div>
+        <div id="detail" class="detail">
+          <p class="muted">Select a process to see its metadata here.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================ EXPORT BAR =========================== -->
+  <footer class="export-bar">
+    <div class="export-left">
+      <strong id="sel-count">0 selected</strong>
+      <span class="muted" id="sel-points"></span>
+    </div>
+    <div class="export-options">
+      <label class="opt">Format
+        <select id="fmt">
+          <option value="zip-pair">CSV + JSON sidecar (.zip) — recommended</option>
+          <option value="zip-combined">Combined long CSV + metadata (.zip)</option>
+          <option value="lxcat">LXCat text (.txt)</option>
+        </select>
+      </label>
+      <label class="opt">Energy
+        <select id="unit-e">
+          <option value="eV">eV</option>
+          <option value="keV">keV</option>
+          <option value="J">J</option>
+        </select>
+      </label>
+      <label class="opt">σ units
+        <select id="unit-s">
+          <option value="m2">m²</option>
+          <option value="cm2">cm²</option>
+          <option value="A2">Å²</option>
+        </select>
+      </label>
+      <label class="opt">Filename
+        <input type="text" id="prefix" value="cross_sections" spellcheck="false" />
+      </label>
+    </div>
+    <button id="export-btn" class="btn btn-primary" type="button" disabled>Export</button>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- modules: order matters (zip → plot → export → app) -->
+  <script src="js/zip.js"></script>
+  <script src="js/plot.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

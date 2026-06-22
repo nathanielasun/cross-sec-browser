@@ -1,0 +1,12 @@
+{
+  "schema": "cross-section-catalog/1.0",
+  "description": "Datasets loaded by the Cross-Section Browser. Add an entry here (and drop the matching JSON in data/) to extend the private database.",
+  "sources": [
+    {
+      "file": "cross_sections.json",
+      "label": "LXCat (Morgan & Phelps)",
+      "kind": "total",
+      "homepage": "https://www.lxcat.net"
+    }
+  ]
+}

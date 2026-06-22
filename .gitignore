@@ -1,0 +1,12 @@
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
+
+# JS tooling (the app itself has NO dependencies; this is only for local tests)
+node_modules/
+package-lock.json
+
+# scratch / local exports
+*.zip
+/exports/
