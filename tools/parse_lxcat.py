@@ -55,6 +55,7 @@ RE_SEPARATOR = re.compile(r"^\s*[x*]{5,}\s*$")    # x/*-rule between sections
 RE_BANNER = re.compile(r"^\s*\*{3,}(.*?)\*{3,}\s*$")  # ***** species *****
 RE_FLOAT = r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
 RE_DATA_ROW = re.compile(r"^\s*(" + RE_FLOAT + r")\s+(" + RE_FLOAT + r")\s*$")
+RE_LONE_FLOAT = re.compile(r"^\s*" + RE_FLOAT + r"\s*$")   # LXCat 3rd line (threshold/mass)
 
 
 def fnum(text):
@@ -165,9 +166,9 @@ def build_record(header_lines, database, banner, energy, sigma, index):
             fields["columns"] = s[len("COLUMNS:"):].strip()
         elif "->" in s and bare_reaction is None:
             bare_reaction = s
-        elif RE_DATA_ROW.match(s) and bare_threshold is None:
-            # lone float line = Morgan bare threshold / mass ratio
-            bare_threshold = fnum(s.split()[0])
+        elif bare_threshold is None and RE_LONE_FLOAT.match(s):
+            # lone float (LXCat 3rd line) = bare threshold (inelastic) / mass ratio (elastic)
+            bare_threshold = fnum(s)
 
     process_line = fields.get("process_line", "")
     species_line = fields.get("species_line", "")

@@ -209,6 +209,68 @@
   }
 
   // ------------------------------------------------------------------
+  //  NIST-style SDCS text for differential processes (canonical eV / m^2/eV),
+  //  preserving the incident energy T, ionization potential B and Wmax.
+  // ------------------------------------------------------------------
+  function sdcsText(procs, opts) {
+    const diffs = procs.filter((p) => p.data_kind === "differential");
+    const L = [];
+    L.push("Singly differential ionization cross sections (SDCS) — exported by Cross-Section Browser, " + opts.stampISO);
+    L.push("Source: " + (opts.datasetSource || "NIST SRD 107"));
+    L.push("Units: ejected-electron energy W in eV; dsigma/dW in m2/eV.");
+    L.push("");
+    for (const p of diffs) {
+      L.push("=".repeat(64));
+      L.push("SPECIES: " + p.projectile + " / " + p.target);
+      L.push("PROCESS: " + (p.reaction || (p.type + ", SDCS")));
+      if (p.incident_energy_eV != null) L.push("INCIDENT ENERGY T: " + p.incident_energy_eV + " eV");
+      if (p.threshold_eV != null) L.push("IONIZATION POTENTIAL B: " + p.threshold_eV + " eV");
+      if (p.wmax_eV != null) L.push("WMAX: " + p.wmax_eV + " eV");
+      if (p.param_raw) L.push("PARAM.:  " + p.param_raw);
+      if (p.comment) L.push("COMMENT: " + p.comment);
+      L.push("COLUMNS: W (eV) | dsigma/dW (m2/eV)");
+      L.push("-".repeat(29));
+      for (let i = 0; i < p.energy.length; i++) {
+        L.push(" " + fmt(p.energy[i]) + "\t" + fmt(p.cross_section[i]));
+      }
+      L.push("-".repeat(29));
+      L.push("");
+    }
+    return L.join("\n") + "\n";
+  }
+
+  // Standard .txt: total -> LXCat blocks, differential -> NIST SDCS blocks.
+  // Single file when homogeneous; a .zip pairing both when mixed.
+  function buildStandardTxt(procs, opts, prefix) {
+    const totals = procs.filter((p) => p.data_kind !== "differential");
+    const diffs = procs.filter((p) => p.data_kind === "differential");
+    if (!diffs.length) {
+      return { filename: prefix + "_lxcat.txt",
+               blob: new Blob([lxcatText(procs, opts)], { type: "text/plain" }) };
+    }
+    if (!totals.length) {
+      return { filename: prefix + "_sdcs.txt",
+               blob: new Blob([sdcsText(procs, opts)], { type: "text/plain" }) };
+    }
+    const files = [
+      { name: prefix + "/" + prefix + "_lxcat.txt", data: lxcatText(totals, opts) },
+      { name: prefix + "/" + prefix + "_sdcs.txt", data: sdcsText(diffs, opts) },
+      { name: prefix + "/README.txt", data: [
+        "Standard cross-section text export",
+        "Generated: " + opts.stampISO,
+        "",
+        prefix + "_lxcat.txt  total cross sections in canonical LXCat block format",
+        "                    (energy eV, cross section m2) — read by BOLSIG+, VSim,",
+        "                    Magboltz and other LXCat-compatible tools.",
+        prefix + "_sdcs.txt   differential (SDCS) dsigma/dW vs ejected energy W",
+        "                    (W eV, dsigma/dW m2/eV), with T, B and Wmax preserved.",
+        "",
+      ].join("\n") },
+    ];
+    return { filename: prefix + "_standard_txt.zip", blob: global.CSBZip.makeZip(files) };
+  }
+
+  // ------------------------------------------------------------------
   //  Manifest + README
   // ------------------------------------------------------------------
   function buildManifest(procs, opts, files) {
@@ -272,6 +334,126 @@
   }
 
   // ------------------------------------------------------------------
+  //  WarpX export: BackgroundMCCCollisions reads a 2-column file with
+  //  EQUALLY SPACED energy (eV) and cross section (m^2). Our tables are
+  //  non-uniform, so we resample onto a uniform grid by linear interpolation.
+  // ------------------------------------------------------------------
+  function resampleUniform(E, S) {
+    const lo = E[0], hi = E[E.length - 1];
+    let finest = Infinity;
+    for (let i = 1; i < E.length; i++) finest = Math.min(finest, E[i] - E[i - 1]);
+    if (!isFinite(finest) || finest <= 0) finest = (hi - lo) / 200;
+    const n = Math.min(1000, Math.max(100, Math.ceil((hi - lo) / finest) + 1));
+    const step = (hi - lo) / (n - 1);
+    const out = [];
+    let j = 0;
+    for (let i = 0; i < n; i++) {
+      const x = (i === n - 1) ? hi : lo + step * i;
+      while (j < E.length - 2 && E[j + 1] < x) j++;
+      const x0 = E[j], x1 = E[j + 1], y0 = S[j], y1 = S[j + 1];
+      let t = x1 > x0 ? (x - x0) / (x1 - x0) : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      out.push([x, y0 + t * (y1 - y0)]);
+    }
+    return out;
+  }
+
+  // map our category/type onto a WarpX scattering-process keyword
+  function warpxKind(p) {
+    const c = (p.category || "").toLowerCase();
+    if (c.includes("ionization") && !c.includes("differential")) return { key: "ionization", needsE: true, needsSpecies: true };
+    if (c.includes("excitation")) return { key: "excitation", needsE: true, needsSpecies: false };
+    if (c === "elastic") return { key: "elastic", needsE: false, needsSpecies: false };
+    if (c === "effective") return { key: "elastic", needsE: false, needsSpecies: false, note: "effective (total momentum transfer)" };
+    if (c.includes("backscat")) return { key: "back", needsE: false, needsSpecies: false };
+    if (c.includes("isotropic")) return { key: "elastic", needsE: false, needsSpecies: false, note: "ion isotropic" };
+    return { key: "elastic", needsE: false, needsSpecies: false, note: p.type };
+  }
+
+  function buildWarpXFiles(procs, opts, prefix) {
+    const totals = procs.filter((p) => p.data_kind !== "differential");
+    const skipped = procs.length - totals.length;
+    const files = [];
+    const byTarget = {};
+
+    for (const p of totals) {
+      const wk = warpxKind(p);
+      const grid = resampleUniform(p.energy, p.cross_section);
+      // 9 sig figs on energy keeps the grid uniform well within WarpX's
+      // sanityCheckEnergyGrid tolerance (|gap - dE| < dE/100); 6 figs for sigma.
+      const lines = grid.map(([e, s]) => e.toExponential(8) + "    " + fmt(s));
+      const fname = sanitize(p.target + "_" + p.id.split("__").slice(-2).join("_")) + ".dat";
+      files.push({ name: prefix + "/xsec/" + fname, data: lines.join("\n") + "\n" });
+      (byTarget[p.target] = byTarget[p.target] || []).push({ p, wk, fname });
+    }
+
+    // input-deck snippet, one collision block per background-gas target
+    const deck = [
+      "# WarpX BackgroundMCCCollisions snippet generated by Cross-Section Browser",
+      "# " + opts.stampISO,
+      "# Cross-section files are 2-column (energy[eV]  sigma[m^2]) on a UNIFORM",
+      "# energy grid (resampled by linear interpolation, as WarpX requires).",
+      "# Fill in <...> placeholders (species names, background density/temperature).",
+      "",
+    ];
+    const names = [];
+    for (const tgt of Object.keys(byTarget)) {
+      const grp = byTarget[tgt];
+      const cname = "mcc_" + sanitize(tgt);
+      names.push(cname);
+      deck.push("# ---- " + tgt + " background gas ----");
+      deck.push(cname + ".species = electrons <" + tgt + "_gas>");
+      deck.push(cname + ".background_density = <n_gas_in_m^-3>");
+      deck.push(cname + ".background_temperature = <T_gas_in_K>");
+      deck.push(cname + ".background_mass = <m_" + tgt + "_in_kg>   # optional");
+      const procNames = [];
+      const counts = {};
+      for (const { wk } of grp) counts[wk.key] = (counts[wk.key] || 0) + 1;
+      const idxByKey = {};
+      const fileLines = [];
+      for (const { p, wk, fname } of grp) {
+        let pn = wk.key;
+        if (counts[wk.key] > 1 || wk.key === "excitation") {
+          idxByKey[wk.key] = (idxByKey[wk.key] || 0) + 1;
+          pn = wk.key + idxByKey[wk.key];
+        }
+        procNames.push(pn);
+        fileLines.push(cname + "." + pn + ".cross_section = xsec/" + fname
+          + (wk.note ? "   # " + wk.note : ""));
+        if (wk.needsE && p.threshold_eV != null) fileLines.push(cname + "." + pn + ".energy = " + p.threshold_eV);
+        if (wk.needsSpecies) fileLines.push(cname + "." + pn + ".species = <" + tgt + "_ions>");
+      }
+      deck.push(cname + ".scattering_processes = " + procNames.join(" "));
+      deck.push(...fileLines, "");
+    }
+    deck.unshift("collisions.collision_names = " + names.join(" "), "");
+
+    files.push({ name: prefix + "/inputs_mcc_snippet.txt", data: deck.join("\n") + "\n" });
+    files.push({ name: prefix + "/README.txt", data: [
+      "WarpX cross-section export",
+      "=========================",
+      "Generated : " + opts.stampISO,
+      "Source    : " + (opts.datasetSource || "LXCat, www.lxcat.net"),
+      "",
+      "xsec/*.dat  two columns: energy [eV]  cross_section [m^2], on a",
+      "                      UNIFORM energy grid (WarpX requires equally-spaced",
+      "                      energies; resampled here by linear interpolation).",
+      "inputs_mcc_snippet.txt  paste into your WarpX input deck; fill <...>.",
+      "",
+      "Notes:",
+      "  * excitation/ionization processes carry '.energy' (threshold, eV);",
+      "    ionization also needs '.species' (the product ion) — set per your run.",
+      "  * 'effective' (LXCat total momentum transfer) is mapped to 'elastic';",
+      "    don't combine it with explicit elastic + inelastic sets.",
+      skipped ? "  * " + skipped + " differential (SDCS) process(es) omitted — WarpX MCC "
+              + "uses total cross sections only." : "",
+      "",
+    ].filter((l) => l !== "").join("\n") });
+
+    return files;
+  }
+
+  // ------------------------------------------------------------------
   //  Top-level: build the downloadable for a selection.
   //  Returns { filename, blob }.
   // ------------------------------------------------------------------
@@ -279,9 +461,46 @@
     const prefix = sanitize(opts.prefix || "cross_sections") || "cross_sections";
     const mode = opts.mode;
 
-    if (mode === "lxcat") {
-      return { filename: prefix + "_lxcat.txt",
-               blob: new Blob([lxcatText(procs, opts)], { type: "text/plain" }) };
+    if (mode === "warpx") {
+      const files = buildWarpXFiles(procs, opts, prefix);
+      return { filename: prefix + "_warpx.zip", blob: global.CSBZip.makeZip(files) };
+    }
+
+    if (mode === "standard-txt" || mode === "lxcat") {
+      return buildStandardTxt(procs, opts, prefix);
+    }
+
+    if (mode === "hdf5") {
+      const inputName = prefix + "_hdf5_input.json";
+      const input = { schema: "cross-section-hdf5-input/1.0", generated_utc: opts.stampISO,
+                      source: opts.datasetSource, n_processes: procs.length, processes: procs };
+      const files = [
+        { name: prefix + "/" + inputName, data: JSON.stringify(input) },
+        { name: prefix + "/README.txt", data: [
+          "HDF5 export bundle",
+          "==================",
+          "Generated : " + opts.stampISO,
+          "Source    : " + (opts.datasetSource || "LXCat + NIST"),
+          "",
+          "Build a single self-describing .h5 (needs Python h5py + numpy):",
+          "    pip install h5py numpy",
+          "    python3 build_hdf5.py " + inputName + " -o " + prefix + ".h5",
+          "",
+          "Resulting layout:",
+          "  /                file attrs (schema, source, n_processes)",
+          "  /<process_id>    one group per process",
+          "      x, y         1D float64 datasets",
+          "                   total:        x=energy[eV], y=cross_section[m^2]",
+          "                   differential: x=W[eV],      y=dsigma/dW[m^2/eV]",
+          "      <attrs>      full metadata + per-dataset quantity/unit",
+          "",
+          "(A browser cannot write binary HDF5 without a heavy library, so this",
+          " bundle ships the data + a small, dependency-light builder instead.)",
+          "",
+        ].join("\n") },
+      ];
+      if (opts.hdf5Builder) files.push({ name: prefix + "/build_hdf5.py", data: opts.hdf5Builder });
+      return { filename: prefix + "_hdf5.zip", blob: global.CSBZip.makeZip(files) };
     }
 
     const files = [];

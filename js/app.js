@@ -308,7 +308,7 @@
     el.exportBtn.disabled = n === 0;
   }
 
-  function doExport() {
+  async function doExport() {
     const procs = selectedProcs();
     if (!procs.length) return;
     const opts = {
@@ -320,6 +320,11 @@
       datasetSource: state.datasetSource,
       provenance: state.provenance,
     };
+    // The HDF5 bundle ships the Python builder so it's self-contained.
+    if (opts.mode === "hdf5") {
+      try { opts.hdf5Builder = await fetch("tools/build_hdf5.py").then((r) => r.ok ? r.text() : ""); }
+      catch (e) { opts.hdf5Builder = ""; }
+    }
     try {
       const { filename, blob } = window.CSBExport.build(procs, opts);
       window.CSBExport.triggerDownload(filename, blob);

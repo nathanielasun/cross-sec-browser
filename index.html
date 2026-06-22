@@ -104,9 +104,11 @@
     <div class="export-options">
       <label class="opt">Format
         <select id="fmt">
-          <option value="zip-pair">CSV + JSON sidecar (.zip) — recommended</option>
-          <option value="zip-combined">Combined long CSV + metadata (.zip)</option>
-          <option value="lxcat">LXCat text (.txt)</option>
+          <option value="warpx">WarpX cross-section files (.zip)</option>
+          <option value="zip-pair">CSV + JSON sidecar (.zip)</option>
+          <option value="standard-txt">Standard text — LXCat + NIST SDCS (.txt/.zip)</option>
+          <option value="hdf5">HDF5 bundle (.zip &rarr; .h5)</option>
+          <option value="zip-combined">Combined long CSV (.zip)</option>
         </select>
       </label>
       <label class="opt">Energy
