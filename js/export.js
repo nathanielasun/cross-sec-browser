@@ -528,7 +528,8 @@
       files.push({ name: prefix + "/README.txt", data: readmeText(opts, mode) });
     }
 
-    return { filename: prefix + ".zip", blob: global.CSBZip.makeZip(files) };
+    const zipName = (mode === "zip-combined") ? prefix + "_combined.zip" : prefix + ".zip";
+    return { filename: zipName, blob: global.CSBZip.makeZip(files) };
   }
 
   function triggerDownload(filename, blob) {
