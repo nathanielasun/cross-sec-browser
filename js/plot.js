@@ -25,13 +25,19 @@
   }
 
   function niceLinTicks(min, max, n) {
-    const span = max - min || 1;
+    const span = (max - min) || Math.abs(max) || 1;
     const raw = span / n;
     const mag = Math.pow(10, Math.floor(Math.log10(raw)));
     const norm = raw / mag;
     const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
     const ticks = [];
-    for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) ticks.push(v);
+    if (!isFinite(step) || step <= 0) return [min, max];
+    // epsilon must scale with the data (cross sections are ~1e-20): a fixed 1e-9
+    // here would loop billions of times. Cap iterations as a hard backstop too.
+    const eps = step * 0.5;
+    for (let v = Math.ceil(min / step) * step; v <= max + eps && ticks.length < 1000; v += step) {
+      ticks.push(v);
+    }
     return ticks;
   }
 
