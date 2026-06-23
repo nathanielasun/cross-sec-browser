@@ -24,8 +24,13 @@
   function convE(v, u) { return v === null || v === undefined ? v : v * E_FACTOR[u]; }
   function convS(v, u) { return v === null || v === undefined ? v : v * S_FACTOR[u]; }
 
+  // strict: WarpX parameter names & internal file stems (no +,(,) which can break parsers)
   function sanitize(name) {
     return String(name).replace(/[^A-Za-z0-9._-]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+  }
+  // relaxed: download filename / folder — keep reaction chars () + so e.g. CO2+ survives
+  function fileStem(name) {
+    return String(name).replace(/[^A-Za-z0-9()._+-]+/g, "_").replace(/_+/g, "_").replace(/^[_\s]+|[_\s]+$/g, "");
   }
 
   // ------------------------------------------------------------------
@@ -458,7 +463,7 @@
   //  Returns { filename, blob }.
   // ------------------------------------------------------------------
   function build(procs, opts) {
-    const prefix = sanitize(opts.prefix || "cross_sections") || "cross_sections";
+    const prefix = fileStem(opts.prefix || "cross_sections") || "cross_sections";
     const mode = opts.mode;
 
     if (mode === "warpx") {
@@ -528,7 +533,7 @@
       files.push({ name: prefix + "/README.txt", data: readmeText(opts, mode) });
     }
 
-    const zipName = (mode === "zip-combined") ? prefix + "_combined.zip" : prefix + ".zip";
+    const zipName = (mode === "zip-combined") ? prefix + "_combined.zip" : prefix + "_csv.zip";
     return { filename: zipName, blob: global.CSBZip.makeZip(files) };
   }
 

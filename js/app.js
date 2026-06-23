@@ -38,6 +38,7 @@
     sortDir: 1,
     provenance: {},
     datasetSource: "LXCat, www.lxcat.net",
+    prefixEdited: false,   // becomes true once the user types a custom filename
   };
 
   const $ = (id) => document.getElementById(id);
@@ -185,6 +186,37 @@
     return String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   }
 
+  // ---- reaction-based download naming -------------------------------
+  function slugify(s) {
+    return String(s == null ? "" : s)
+      .replace(/[^A-Za-z0-9()+.\-]+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  }
+  function reactionSlug(p) {
+    let r = p.reaction || p.type || p.target || "process";
+    r = r.replace(/\s*\[d[^\]]*\]\s*/i, "_SDCS")   // [dσ/dW] -> _SDCS
+         .replace(/->/g, "-").replace(/→/g, "-")
+         .replace(/\s+/g, "");
+    return slugify(r) || "process";
+  }
+  // name the download from the selection: a single reaction verbatim, else a
+  // compact species/type summary.
+  function autoName(procs) {
+    if (!procs.length) return "cross_sections";
+    if (procs.length === 1) return reactionSlug(procs[0]);
+    const targets = [...new Set(procs.map((p) => p.target))];
+    const cats = [...new Set(procs.map((p) => p.category))];
+    if (targets.length === 1) {
+      return slugify(targets[0]) + "_" + (cats.length === 1 ? slugify(cats[0]) : procs.length + "processes");
+    }
+    if (cats.length === 1) return slugify(cats[0]) + "_" + procs.length + "processes";
+    return procs.length + "_cross_sections";
+  }
+  function updatePrefix() {
+    if (state.prefixEdited) return;
+    const procs = selectedProcs();
+    el.prefix.value = procs.length ? autoName(procs) : "";
+  }
+
   // ---------------------------------------------------------- selection
   function toggleSelect(id, forceState) {
     const has = state.selectedSet.has(id);
@@ -205,6 +237,7 @@
     updatePlot();
     updateDetail();
     updateExportBar();
+    updatePrefix();
     syncCheckAll();
   }
 
@@ -315,7 +348,7 @@
       mode: el.fmt.value,
       unitE: el.unitE.value,
       unitS: el.unitS.value,
-      prefix: el.prefix.value,
+      prefix: el.prefix.value.trim() || autoName(procs),
       stampISO: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
       datasetSource: state.datasetSource,
       provenance: state.provenance,
@@ -384,6 +417,8 @@
 
     el.logx.addEventListener("change", updatePlot);
     el.logy.addEventListener("change", updatePlot);
+    // typing a custom filename stops auto-naming; clearing it resumes auto
+    el.prefix.addEventListener("input", () => { state.prefixEdited = el.prefix.value.trim() !== ""; });
     el.exportBtn.addEventListener("click", doExport);
     window.addEventListener("resize", debounce(() => plot.draw(), 100));
   }

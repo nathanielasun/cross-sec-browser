@@ -59,6 +59,11 @@ import (1 Å² = 1 × 10⁻²⁰ m²; 1 × 10⁻¹⁶ cm² = 1 × 10⁻²⁰ m²
 | **HDF5 bundle** (`.zip` → `.h5`) | selection JSON + `build_hdf5.py` builder; run it for a self-describing `.h5` (group per process, x/y datasets + metadata attrs) | HDF5-based pipelines (e.g. PICLas), Python/MATLAB/Julia |
 | **Combined long CSV** (`.zip`) | one stacked `*_combined.csv` (generic x/y + `data_kind` columns) + `*_metadata.json` | loading everything as one table |
 
+Each download is **auto-named from the selected reaction + format** (e.g.
+`E+CO2-E+E+CO2+_warpx.zip`, or `He_Ionization_(differential)_csv.zip` for a
+multi-process selection). Type in the **Filename** field to override, or clear
+it to resume auto-naming.
+
 CSV files use `#`-comment headers (skipped by `numpy.loadtxt` / `pandas
 read_csv(comment='#')`). Optional unit conversion covers energy (eV / keV / J)
 and cross section (m² / cm² / Å²). For differential data the ejected-electron
