@@ -44,10 +44,23 @@ No build step, no internet, no dependencies — plain HTML/CSS/JS.
 | NIST SRD 107 | BEB | total electron-impact ionization (93 molecules + H, He, H₂⁺) | 96 |
 | NIST SRD 107 | BEB SDCS | **differential** dσ/dW for H & He at 8 incident energies | 16 |
 | NIST SRD 107 | BE-scaled excitation | electron-impact excitation of H, He, Li (dipole transitions) | 24 |
+| LXCat | SIGLO (Kr) | electron–Kr elastic MT, 5 excitations (9.9–11.3 eV), ionization | 7 |
+| LXCat | Morgan (F₂) | electron–F₂ attachment (DEA), effective MT, vibrational, dissociation, ionization | 11 |
+| IAEA AMDIS | CollisionDB | electron-impact ionization ladders Kr→Kr⁴⁺ and F→F⁹⁺ (BELI recommended fits) | 13 |
+| MPI-Mainz | UV/VIS Atlas | **photoabsorption** F₂ + hν → 2F, σ(λ), 4 measurements (190–500 nm) | 4 |
+| Jancaitis (LLNL) | KrF kinetics | **rate coefficients** k(T) for KrF\*/Kr₂F\* excimer formation (harpoon), 2-/3-body quenching, Penning | 15 |
 
-**171 processes / ~12,850 data points.** Internal canonical units are eV and m²
+**221 processes / ~14,610 data points.** Internal canonical units are eV and m²
 (differential: eV and m²/eV); NIST Å² and 10⁻¹⁶ cm² values are converted on
 import (1 Å² = 1 × 10⁻²⁰ m²; 1 × 10⁻¹⁶ cm² = 1 × 10⁻²⁰ m²).
+
+Beyond total σ(E) and differential dσ/dW, the catalog now also carries two
+non-σ(E) data kinds, each plotted on its own axes and **excluded from the WarpX /
+LXCat cross-section exports** (different units): **rate coefficients** k(T) (K vs
+cm³/s or cm⁶/s) and **photoabsorption** σ(λ) (nm vs m²). They still export via the
+generic CSV+JSON / combined-CSV / HDF5 formats in their native units. See
+[`docs/data-sources-kr-f.md`](docs/data-sources-kr-f.md) for full provenance and
+the wider Kr/F/KrF acquisition map.
 
 ## Export formats
 

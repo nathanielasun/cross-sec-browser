@@ -11,20 +11,27 @@
   const PRETTY_UNIT = {
     eV: "eV", keV: "keV", J: "J", m2: "m²", cm2: "cm²", A2: "Å²",
     "m2/eV": "m²/eV", "cm2/eV": "cm²/eV", "A2/eV": "Å²/eV",
+    nm: "nm", K: "K", "cm3/s": "cm³/s", "cm6/s": "cm⁶/s",
   };
   const pu = (u) => PRETTY_UNIT[u] || u;
   const isDiff = (p) => p.data_kind === "differential";
+  // hover-readout symbols per data kind (axis labels themselves come from x/y_quantity)
+  const KIND_SYM = {
+    total: { x: "E", y: "σ" }, differential: { x: "W", y: "dσ/dW" },
+    photoabsorption: { x: "λ", y: "σ" },
+    rate_2body: { x: "T", y: "k" }, rate_3body: { x: "T", y: "k" },
+  };
 
   // axis/legend metadata for a process (defaults cover legacy total-only data)
   function axisInfo(p) {
     const xq = p.x_quantity || "Energy", xu = p.x_unit || "eV";
     const yq = p.y_quantity || "Cross section", yu = p.y_unit || "m2";
+    const sym = KIND_SYM[p.data_kind || "total"] || { x: "x", y: "y" };
     return {
       xLabel: xq + "  (" + pu(xu) + ")",
       yLabel: yq + "  (" + pu(yu) + ")",
       xunit: pu(xu), yunit: pu(yu),
-      xsym: isDiff(p) ? "W" : "E",
-      ysym: isDiff(p) ? "dσ/dW" : "σ",
+      xsym: sym.x, ysym: sym.y,
     };
   }
 
@@ -297,7 +304,7 @@
       return `<span class="item ${id === state.focusId ? "focused" : ""} ${other ? "off-kind" : ""}" data-id="${id}" title="${other ? "different data kind — not plotted with the current curve" : ""}">
         <span class="swatch" style="background:${other ? "#cfd6de" : c}"></span>${esc(shortDb(p.database))} · ${esc(p.target)} · ${esc(p.reaction || p.type)}</span>`;
     }).join("");
-    const note = hidden ? `<span class="legend-note">${hidden} ${refKind === "differential" ? "total" : "differential"} series hidden (different units) — focus one to plot it.</span>` : "";
+    const note = hidden ? `<span class="legend-note">${hidden} series of a different data kind hidden (different quantity/units) — focus one to plot it.</span>` : "";
     el.legend.innerHTML = note + items;
   }
 
@@ -312,13 +319,24 @@
     add("Process", p.reaction);
     add("Type", p.type + " (" + p.category + ")");
     add("Species", p.projectile + " / " + p.target);
-    if (isDiff(p)) {
+    const kind = p.data_kind || "total";
+    if (kind === "differential") {
       add("Kind", "Differential — SDCS dσ/dW");
       if (p.incident_energy_eV != null) add("Incident energy T", p.incident_energy_eV + " eV");
       if (p.threshold_eV != null) add("Ionization potential B", p.threshold_eV + " eV");
       if (p.wmax_eV != null) add("Max ejected energy", fmtNum(p.wmax_eV) + " eV");
       add("Points", p.n_points + "  (W: " + fmtNum(p.energy_min_eV) + " – " + fmtNum(p.energy_max_eV) + " eV)");
       add("Peak dσ/dW", p.sigma_max_m2 != null ? p.sigma_max_m2.toExponential(3) + " m²/eV" : null);
+    } else if (kind === "rate_2body" || kind === "rate_3body") {
+      add("Kind", "Reaction rate coefficient k(T)" + (kind === "rate_3body" ? " — three-body" : ""));
+      const xu = pu(p.x_unit || "K"), yu = pu(p.y_unit || "cm3/s");
+      add("Points", p.n_points + "  (T: " + fmtNum(p.energy_min_eV) + " – " + fmtNum(p.energy_max_eV) + " " + xu + ")");
+      add("Peak k", p.sigma_max_m2 != null ? p.sigma_max_m2.toExponential(3) + " " + yu : null);
+    } else if (kind === "photoabsorption") {
+      add("Kind", "Photoabsorption σ(λ)");
+      const xu = pu(p.x_unit || "nm"), yu = pu(p.y_unit || "m2");
+      add("Points", p.n_points + "  (λ: " + fmtNum(p.energy_min_eV) + " – " + fmtNum(p.energy_max_eV) + " " + xu + ")");
+      add("Peak σ", p.sigma_max_m2 != null ? p.sigma_max_m2.toExponential(3) + " " + yu : null);
     } else {
       if (p.threshold_eV != null) add("Threshold", p.threshold_eV + " eV");
       if (p.mass_ratio != null) add("Mass ratio m/M", p.mass_ratio);

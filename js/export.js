@@ -24,6 +24,12 @@
   function convE(v, u) { return v === null || v === undefined ? v : v * E_FACTOR[u]; }
   function convS(v, u) { return v === null || v === undefined ? v : v * S_FACTOR[u]; }
 
+  // Total electron-impact cross section σ(E) in canonical eV / m^2 — the only kind
+  // WarpX/LXCat σ exports and the eV↔keV / m²↔cm² unit toggle apply to. Differential
+  // (SDCS), rate-coefficient k(T) and photoabsorption σ(λ) carry their own units and
+  // are exported natively / skipped by σ-only formats.
+  function isTotalSigma(p) { return (p.data_kind || "total") === "total"; }
+
   // strict: WarpX parameter names & internal file stems (no +,(,) which can break parsers)
   function sanitize(name) {
     return String(name).replace(/[^A-Za-z0-9._-]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
@@ -39,6 +45,7 @@
   function processCsv(p, opts) {
     const eu = opts.unitE, su = opts.unitS;
     const diff = p.data_kind === "differential";
+    const total = isTotalSigma(p);
     const L = [];
     L.push("# Cross-Section Browser export — " + opts.stampISO);
     L.push("# source: " + (opts.datasetSource || "LXCat, www.lxcat.net"));
@@ -68,11 +75,21 @@
       for (let i = 0; i < p.energy.length; i++) {
         L.push(fmt(p.energy[i]) + "," + fmt(convS(p.cross_section[i], su)));
       }
-    } else {
+    } else if (total) {
       L.push("# columns: energy [" + E_LABEL[eu] + "], cross_section [" + S_PRETTY[su] + "]");
       L.push("energy_" + E_LABEL[eu] + ",cross_section_" + S_LABEL[su]);
       for (let i = 0; i < p.energy.length; i++) {
         L.push(fmt(convE(p.energy[i], eu)) + "," + fmt(convS(p.cross_section[i], su)));
+      }
+    } else {
+      // rate-coefficient / photoabsorption: native units (the eV/m² toggle does not apply).
+      const xu = p.x_unit || "x", yu = p.y_unit || "y";
+      const xq = (p.x_quantity || "x").replace(/\s+/g, "_");
+      const yq = (p.y_quantity || "y").replace(/\s+/g, "_");
+      L.push("# columns: " + (p.x_quantity || "x") + " [" + xu + "], " + (p.y_quantity || "y") + " [" + yu + "]");
+      L.push(xq + "_" + xu.replace(/\//g, "_per_") + "," + yq + "_" + yu.replace(/\//g, "_per_"));
+      for (let i = 0; i < p.energy.length; i++) {
+        L.push(fmt(p.energy[i]) + "," + fmt(p.cross_section[i]));
       }
     }
     return L.join("\n") + "\n";
@@ -84,6 +101,7 @@
   function processSidecar(p, opts, csvName) {
     const eu = opts.unitE, su = opts.unitS;
     const diff = p.data_kind === "differential";
+    const total = isTotalSigma(p);
     const base = {
       schema: "cross-section-metadata/1.1",
       generated_utc: opts.stampISO,
@@ -122,6 +140,19 @@
         y_max: numOrNull(convS(p.sigma_max_m2, su)),
       });
     }
+    if (!total) {
+      // rate-coefficient / photoabsorption: native units, no eV/m² conversion.
+      return Object.assign(base, {
+        threshold: numOrNull(p.threshold_eV),
+        axes: { x_quantity: p.x_quantity || "x", y_quantity: p.y_quantity || "y" },
+        units: { x: p.x_unit || "", y: p.y_unit || "" },
+        source_units: { x: p.x_unit || "", y: p.y_unit || "" },
+        conversion_from_source: { x: 1, y: 1 },
+        x_min: numOrNull(p.energy_min_eV),
+        x_max: numOrNull(p.energy_max_eV),
+        y_max: numOrNull(p.sigma_max_m2),
+      });
+    }
     return Object.assign(base, {
       threshold: numOrNull(convE(p.threshold_eV, eu)),
       axes: { x_quantity: p.x_quantity || "Energy", y_quantity: p.y_quantity || "Cross section" },
@@ -146,6 +177,7 @@
     L.push("# source: " + (opts.datasetSource || "LXCat, www.lxcat.net"));
     L.push("# total: x=energy [" + E_LABEL[eu] + "], y=cross_section [" + S_PRETTY[su] + "]");
     L.push("# differential (SDCS): x=W [eV], y=dsigma_dW [" + S_PRETTY[su] + "/eV], incident_energy in eV");
+    L.push("# rate (k(T)) / photoabsorption: native units per the x_unit/y_unit columns (no eV/m² conversion)");
     L.push("# processes: " + procs.length + " (see accompanying _metadata.json)");
     L.push([
       "process_id", "database", "target", "category", "data_kind", "incident_energy_eV",
@@ -153,14 +185,15 @@
     ].join(","));
     for (const p of procs) {
       const diff = p.data_kind === "differential";
+      const total = isTotalSigma(p);
       const xq = '"' + (p.x_quantity || (diff ? "Ejected energy W" : "Energy")) + '"';
       const yq = '"' + (p.y_quantity || (diff ? "dsigma/dW" : "Cross section")) + '"';
-      const xunit = diff ? "eV" : E_LABEL[eu];
-      const yunit = diff ? (S_LABEL[su] + "/eV") : S_LABEL[su];
+      const xunit = total ? E_LABEL[eu] : (diff ? "eV" : (p.x_unit || ""));
+      const yunit = total ? S_LABEL[su] : (diff ? (S_LABEL[su] + "/eV") : (p.y_unit || ""));
       const T = diff ? (p.incident_energy_eV ?? "") : "";
       for (let i = 0; i < p.energy.length; i++) {
-        const xv = diff ? fmt(p.energy[i]) : fmt(convE(p.energy[i], eu));
-        const yv = fmt(convS(p.cross_section[i], su));
+        const xv = total ? fmt(convE(p.energy[i], eu)) : fmt(p.energy[i]);
+        const yv = (total || diff) ? fmt(convS(p.cross_section[i], su)) : fmt(p.cross_section[i]);
         L.push([p.id, '"' + p.database + '"', p.target, '"' + p.category + '"',
                 p.data_kind || "total", T, xq, xunit, xv, yq, yunit, yv].join(","));
       }
@@ -172,15 +205,16 @@
   //  LXCat text re-export (always in canonical eV / m^2)
   // ------------------------------------------------------------------
   function lxcatText(procs, opts) {
-    const total = procs.filter((p) => p.data_kind !== "differential");
+    const total = procs.filter(isTotalSigma);
     const skipped = procs.length - total.length;
     const L = [];
     L.push("LXCat-format export generated by Cross-Section Browser, " + opts.stampISO);
     L.push("Original source: " + (opts.datasetSource || "LXCat, www.lxcat.net"));
     L.push("Units: energy in eV, cross section in m2 (LXCat canonical).");
     if (skipped) {
-      L.push("NOTE: " + skipped + " differential (SDCS) process(es) omitted — the LXCat block "
-           + "format represents total cross sections only; export those as CSV/JSON instead.");
+      L.push("NOTE: " + skipped + " non-total process(es) omitted (differential SDCS, "
+           + "rate-coefficient k(T), and/or photoabsorption σ(λ)) — the LXCat block format "
+           + "represents total cross sections σ(E) only; export those as CSV/JSON instead.");
     }
     L.push("");
     const byDb = {};
@@ -247,7 +281,7 @@
   // Standard .txt: total -> LXCat blocks, differential -> NIST SDCS blocks.
   // Single file when homogeneous; a .zip pairing both when mixed.
   function buildStandardTxt(procs, opts, prefix) {
-    const totals = procs.filter((p) => p.data_kind !== "differential");
+    const totals = procs.filter(isTotalSigma);
     const diffs = procs.filter((p) => p.data_kind === "differential");
     if (!diffs.length) {
       return { filename: prefix + "_lxcat.txt",
@@ -376,7 +410,7 @@
   }
 
   function buildWarpXFiles(procs, opts, prefix) {
-    const totals = procs.filter((p) => p.data_kind !== "differential");
+    const totals = procs.filter(isTotalSigma);
     const skipped = procs.length - totals.length;
     const files = [];
     const byTarget = {};
@@ -450,8 +484,9 @@
       "    ionization also needs '.species' (the product ion) — set per your run.",
       "  * 'effective' (LXCat total momentum transfer) is mapped to 'elastic';",
       "    don't combine it with explicit elastic + inelastic sets.",
-      skipped ? "  * " + skipped + " differential (SDCS) process(es) omitted — WarpX MCC "
-              + "uses total cross sections only." : "",
+      skipped ? "  * " + skipped + " non-total process(es) omitted (differential SDCS, "
+              + "rate-coefficient k(T), photoabsorption σ(λ)) — WarpX MCC uses total "
+              + "cross sections σ(E) only." : "",
       "",
     ].filter((l) => l !== "").join("\n") });
 

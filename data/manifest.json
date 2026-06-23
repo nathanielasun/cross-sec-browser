@@ -13,6 +13,30 @@
       "label": "NIST SRD 107 (BEB)",
       "kind": "total+differential",
       "homepage": "https://physics.nist.gov/PhysRefData/Ionization/"
+    },
+    {
+      "file": "lxcat_kr_f2.json",
+      "label": "LXCat — Krypton (SIGLO) & Fluorine F2 (Morgan)",
+      "kind": "total",
+      "homepage": "https://www.lxcat.net"
+    },
+    {
+      "file": "amdis_kr_f.json",
+      "label": "IAEA AMDIS CollisionDB — Kr / F ionization ladders",
+      "kind": "total",
+      "homepage": "https://db-amdis.org/collisiondb/"
+    },
+    {
+      "file": "f2_photoabsorption.json",
+      "label": "MPI-Mainz — F2 photoabsorption σ(λ)",
+      "kind": "photoabsorption",
+      "homepage": "https://uvvis.mpch-mainz.gwdg.de/"
+    },
+    {
+      "file": "krf_rates.json",
+      "label": "Jancaitis — KrF* excimer rate coefficients k(T)",
+      "kind": "rate",
+      "homepage": "https://www.osti.gov/biblio/5271749"
     }
   ]
 }
