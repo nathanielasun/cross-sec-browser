@@ -192,8 +192,17 @@ tbody tr.focused td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .toast.err { background: #8a1f1f; }
 
 /* --------------------------- responsive --------------------------- */
+/* Desktop is a fixed-viewport app shell (height:100% + inner scroll areas).
+   On small screens that traps the stacked content with no page scroll, so we
+   fall back to normal document flow and let the page scroll. */
 @media (max-width: 920px) {
-  .workspace { grid-template-columns: 1fr; }
-  .table-scroll { max-height: 46vh; }
+  html, body { height: auto; }             /* release the fixed-viewport shell */
+  body { display: block; }                 /* normal document flow → page scrolls */
+  main { display: block; min-height: 0; padding: 12px 14px 20px; }
+  .app-header { padding: 12px 14px; }
+  .workspace { display: block; }           /* stack table over preview */
+  .table-panel, .preview-panel { margin-bottom: 14px; }
+  .table-scroll { max-height: 55vh; }      /* table keeps its own scroll; page scrolls past it */
   #plot { height: 240px; }
+  .export-bar { position: static; padding: 12px 14px; }
 }
