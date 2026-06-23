@@ -1,5 +1,8 @@
 # Cross-Section Browser
 
+> **The comprehensive cross-section browser you knew you needed.**
+> **Live:** https://nathanielasun.github.io/cross-sec-browser/
+
 A simple, dependency-free web app for browsing, plotting, and exporting
 electron- and ion-collision **cross-section data** for import into PIC-MCC and
 Boltzmann-solver codes.
