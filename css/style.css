@@ -201,8 +201,13 @@ tbody tr.focused td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
   main { display: block; min-height: 0; padding: 12px 14px 20px; }
   .app-header { padding: 12px 14px; }
   .workspace { display: block; }           /* stack table over preview */
+  /* panels become block flow so their flex:1 children (table-scroll, detail)
+     size to content instead of collapsing to flex-basis:0 (no definite height
+     to grow into here) */
+  .panel { display: block; }
   .table-panel, .preview-panel { margin-bottom: 14px; }
   .table-scroll { max-height: 55vh; }      /* table keeps its own scroll; page scrolls past it */
+  .detail { max-height: 60vh; }            /* long comments scroll instead of collapsing */
   #plot { height: 240px; }
   .export-bar { position: static; padding: 12px 14px; }
 }
